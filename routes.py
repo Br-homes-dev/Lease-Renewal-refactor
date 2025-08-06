@@ -10,28 +10,32 @@ routes = Blueprint('routes', __name__)
 @routes.route('/fetch-data')
 def fetch_data():
     """
-    Fetches rent, purchase price and cash flow post investor from google sheets for a given SF opportunity ID.
+    Fetches rent, purchase price and cash flow post investor from Google Sheets for a given SF opportunity ID.
     Computes:
     - 3% rent increase
     - threshold requirement based on the purchase price
-    - weather current cashflow meets the threshold
+    - whether current cashflow meets the threshold
     - row number so we can make a quicker update later
     """
     opp_id: Optional[str] = request.args.get('opp_id')
     logger.debug(f"Received request to fetch data for Opportunity ID: {opp_id}")
     if not opp_id:
-        return 'Please provide an Opportunity ID as a query parameter: ?oppId=...', 400
-    
+        return 'Please provide an Opportunity ID as a query parameter: ?opp_id=...', 400
+
     spreadsheet_id = os.environ.get('GOOGLE_SHEET_ID')
     sheet_name = os.environ.get('GOOGLE_SHEET_NAME')
     logger.debug(f"Spreadsheet ID: {spreadsheet_id}, Sheet Name: {sheet_name}")
+
+    if not spreadsheet_id or not sheet_name:
+        logger.error("Missing GOOGLE_SHEET_ID or GOOGLE_SHEET_NAME environment variable")
+        return 'Internal config error: Missing sheet ID or name', 500
 
     try:
         service = get_sheets_service()
         last_row = get_last_row(service, spreadsheet_id, sheet_name)
 
         # Data starts in row 3 due to header
-        range = f"{sheet_name}!A3:BV{last_row}"
+        range = f"{sheet_name}!A3:BW{last_row}"
         resp = service.spreadsheets().values().get(
             spreadsheetId=spreadsheet_id,
             range=range
@@ -39,34 +43,43 @@ def fetch_data():
 
         rows = resp.get('values', [])
 
-        id_to_row : Dict[str,List[str]] = {}
-        row_number_map: Dict[str,int] = {}
+        id_to_row: Dict[str, List[str]] = {}
+        row_number_map: Dict[str, int] = {}
 
         for i, row in enumerate(rows):
-            if len(row) > 73:
-                id_val = row[73].strip()
-                if id_val:
-                    id_to_row[id_val] = row
-                    row_number_map[id_val] = i + 3 # +3 because data starts from row 3 in the sheet
-        
-        logger.debug(f"Fetched {len(rows)} rows from Google Sheets.")
-        
-        if opp_id not in id_to_row:
+            try:
+                if len(row) > 74:
+                    raw_id = row[74]
+                    if raw_id:
+                        id_val = ''.join(raw_id.split()).lower()
+                        id_to_row[id_val] = row
+                        row_number_map[id_val] = i + 3  # Offset for row start at 3
+                else:
+                    logger.warning(f"Row {i+3} too short: only {len(row)} columns")
+            except Exception as e:
+                logger.error(f"Error processing row {i+3}: {e} | Row content: {row}")
+
+        logger.debug(f"Collected {len(id_to_row)} valid rows")
+        logger.debug(f"Sample IDs: {list(id_to_row.keys())[:5]}")
+
+        normalized_opp_id = ''.join(opp_id.split()).lower()
+        if normalized_opp_id not in id_to_row:
             logger.debug(f"No data found for Opportunity ID: {opp_id}")
             return f"No data found for Opportunity ID: {opp_id}", 404
-        
-        found_row = id_to_row[opp_id]
-        row_number = row_number_map[opp_id]
 
-        # Sheet columns mapping
+        found_row = id_to_row[normalized_opp_id]
+        row_number = row_number_map[normalized_opp_id]
+
+        # Sheet column mapping
         rent_raw = found_row[18] if len(found_row) > 18 else ''
         purchase_price_raw = found_row[9] if len(found_row) > 9 else ''
         cashflow_raw = found_row[29] if len(found_row) > 29 else ''
 
         def parse_num(value: str) -> float:
             return float(''.join(ch for ch in value if ch in '0123456789.-')) if value else 0.0
+
         logger.debug(f"Parsed values - Rent: {rent_raw}, Purchase Price: {purchase_price_raw}, Cashflow: {cashflow_raw}")
-        
+
         rent = parse_num(rent_raw)
         purchase_price = parse_num(purchase_price_raw)
         cashflow = parse_num(cashflow_raw)
@@ -89,7 +102,7 @@ def fetch_data():
             'rentAfter3Percent': rent_after_3_percent,
             'meetsThreshold': meets_threshold,
         })
-    
+
     except Exception as e:
-        logger.error(f"Error fetching data: {e}")
+        logger.error(f"Error fetching data from Google Sheets: {e}")
         return 'Error fetching data from Google Sheets', 500
