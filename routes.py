@@ -55,7 +55,7 @@ def fetch_data():
                         id_to_row[id_val] = row
                         row_number_map[id_val] = i + 3  # Offset for row start at 3
                 else:
-                    logger.warning(f"Row {i+3} too short: only {len(row)} columns")
+                    logger.debug(f"Row {i+3} too short: only {len(row)} columns")
             except Exception as e:
                 logger.error(f"Error processing row {i+3}: {e} | Row content: {row}")
 
