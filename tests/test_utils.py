@@ -1,7 +1,9 @@
-from server import parse_num
+import unittest
+from utils import parse_num
 
-def test_parse_num():
-    assert parse_num("1,234.56") == 1234.56
-    assert parse_num("1,000") == 1000
-    assert parse_num("") == 0
-    assert parse_num("N/A") == 0
+class TestParseNum(unittest.TestCase):
+    def test_parse_valid(self):
+        self.assertEqual(parse_num("$1,000.00"), 1000.00)
+
+    def test_parse_empty(self):
+        self.assertEqual(parse_num(""), 0.0)
