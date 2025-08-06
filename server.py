@@ -51,6 +51,21 @@ def get_salesforce_access_token() -> Tuple[str, str]:
     logger.info('Salesforce access token obtained successfully.')
     return data['access_token'], data['instance_url']
 
+@app.route('/')
+def serve_index():
+    """
+    Serve the index.html file from the static directory.
+    """
+    return send_from_directory('static', 'index.html')
+
+@app.route('/<path:filename>')
+def serve_static_file(filename: str):
+    """
+    Serve static files from the static directory.
+    """
+    return send_from_directory('static', filename)
+
 if __name__ == '__main__':
-    app.run(port=8080,debug=True)
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host="0.0.0.0", port=port, debug=True)
 

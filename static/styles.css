@@ -1,0 +1,77 @@
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #f0f2f5;
+  padding: 2rem;
+}
+
+.container {
+  background: white;
+  padding: 2.5rem;
+  border-radius: 10px;
+  max-width: 600px;
+  margin: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+h1 {
+  font-size: 1.75rem;
+  margin-bottom: 1.5rem;
+}
+
+p {
+  font-size: 1rem;
+  margin: 0.4rem 0;
+}
+
+strong {
+  font-weight: 600;
+}
+
+#actions {
+  margin-top: 1.5rem;
+}
+
+button {
+  padding: 0.6rem 1.2rem;
+  font-size: 1rem;
+  background-color: #2d72d9;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+button:hover {
+  background-color: #1b5fcc;
+}
+
+input[type="radio"] {
+  margin-right: 0.5rem;
+}
+
+input[type="number"] {
+  padding: 0.4rem;
+  font-size: 1rem;
+  margin-left: 0.5rem;
+  width: 120px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+label {
+  display: block;
+  margin: 0.5rem 0;
+}
+
+#thresholdStatus {
+  font-weight: bold;
+}
+
+#thresholdStatus:contains("No") {
+  color: #c62828;
+}
+
+#thresholdStatus:contains("Yes") {
+  color: #2e7d32;
+}
