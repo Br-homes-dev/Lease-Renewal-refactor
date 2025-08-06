@@ -95,11 +95,11 @@ def fetch_data():
         return jsonify({
             'message': 'Opportunity ID found!',
             'rowNumber': row_number,
-            'rent': rent,
-            'purchasePrice': purchase_price,
-            'cashflow': cashflow,
-            'threshold': threshold,
-            'rentAfter3Percent': rent_after_3_percent,
+            'rent': f"${rent:,.2f}",
+            'purchasePrice': f"${purchase_price:,.2f}",
+            'cashflow': f"${cashflow:,.2f}",
+            'threshold': f"${threshold:,.2f}",
+            'rentAfter3Percent': f"${rent_after_3_percent:,.2f}",
             'meetsThreshold': meets_threshold,
         })
 
