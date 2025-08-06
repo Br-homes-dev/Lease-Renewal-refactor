@@ -29,19 +29,24 @@ async function fetchData(opp_id) {
   const data = await response.json();
   const resultDiv = document.getElementById('result');
 
+  const currentRent = data.rentValue;
+  const currentCashflow = data.cashflowValue;
+  const threshold = data.thresholdValue;
+
   resultDiv.innerHTML = `
-    <p><strong>Purchase Price:</strong> ${formatCurrency(data.purchasePrice)}</p>
-    <p><strong>Current Rent:</strong> ${formatCurrency(data.rent)}</p>
-    <p><strong>Proposed 3% Rent:</strong> ${formatCurrency(data.rentAfter3Percent)}</p>
-    <p><strong>Cash Flow:</strong> ${formatCurrency(data.cashflow)}</p>
-    <p><strong>Required Threshold:</strong> ${formatCurrency(data.threshold)}</p>
+    <p><strong>Purchase Price:</strong> ${formatCurrency(data.purchasePriceValue)}</p>
+    <p><strong>Current Rent:</strong> ${formatCurrency(currentRent)}</p>
+    <p><strong>Proposed 3% Rent:</strong> ${formatCurrency(data.rentAfter3PercentValue)}</p>
+    <p><strong>Cash Flow:</strong> ${formatCurrency(currentCashflow)}</p>
+    <p><strong>Required Threshold:</strong> ${formatCurrency(threshold)}</p>
+    <p id="cashflowStatus"></p>
 
     <fieldset>
       <legend><strong>Update Rent Decision</strong></legend>
 
       <label class="inline">
         <input type="radio" name="rentChoice" value="system" checked />
-        Use system 3% increase (${formatCurrency(data.rentAfter3Percent)})
+        Use system 3% increase (${formatCurrency(data.rentAfter3PercentValue)})
       </label>
 
       <label class="inline">
@@ -51,7 +56,7 @@ async function fetchData(opp_id) {
 
       <label>
         New Rent:
-        <input type="number" id="approvedRent" value="${data.rentAfter3Percent}" step="0.01" />
+        <input type="number" id="approvedRent" value="${data.rentAfter3PercentValue}" step="0.01" />
       </label>
 
       <label>
@@ -64,26 +69,59 @@ async function fetchData(opp_id) {
         Send Lease?
       </label>
 
-      <button onclick="submitDecision('${opp_id}', ${data.rowNumber}, ${data.rentAfter3Percent})">Submit Update</button>
+      <button onclick="submitDecision('${opp_id}', ${data.rowNumber}, ${data.rentAfter3PercentValue})">Submit Update</button>
     </fieldset>
   `;
+
+  const approvedRentInput = document.getElementById('approvedRent');
+
+  async function updateCashflowDisplay() {
+    const newRent = parseFloat(approvedRentInput.value);
+    if (isNaN(newRent)) return;
+    try {
+      const resp = await fetch('/calculate-cashflow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentRent,
+          currentCashflow,
+          threshold,
+          newRent
+        })
+      });
+      if (!resp.ok) return;
+      const res = await resp.json();
+      const statusEl = document.getElementById('cashflowStatus');
+      const diffAbs = Math.abs(res.difference);
+      const msg = res.meets_threshold
+        ? `Cash flow is ${formatCurrency(diffAbs)} above threshold.`
+        : `Cash flow is ${formatCurrency(diffAbs)} below threshold.`;
+      statusEl.textContent = msg;
+      statusEl.style.color = res.meets_threshold ? 'green' : 'red';
+    } catch (e) {
+      console.error(e);
+    }
+  }
 
   // Enable toggle logic
   document.querySelectorAll('input[name="rentChoice"]').forEach(radio => {
     radio.addEventListener('change', () => {
-      const approvedRentInput = document.getElementById('approvedRent');
       if (radio.value === 'system' && radio.checked) {
-        approvedRentInput.value = data.rentAfter3Percent;
+        approvedRentInput.value = data.rentAfter3PercentValue;
         approvedRentInput.readOnly = true;
       } else if (radio.value === 'custom' && radio.checked) {
         approvedRentInput.readOnly = false;
         approvedRentInput.focus();
       }
+      updateCashflowDisplay();
     });
   });
 
-  // Start with system value locked
-  document.getElementById('approvedRent').readOnly = true;
+  approvedRentInput.addEventListener('input', updateCashflowDisplay);
+
+  // Start with system value locked and display initial status
+  approvedRentInput.readOnly = true;
+  updateCashflowDisplay();
 }
 
 async function submitDecision(opp_id, row, fallbackRent) {
