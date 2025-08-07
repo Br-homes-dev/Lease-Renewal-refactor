@@ -7,7 +7,7 @@ def get_sheets_service():
     logger.debug('Initializing Google Sheets service...')
     creds = service_account.Credentials.from_service_account_file(
         os.getenv('GOOGLE_SHEET_CREDENTIALS_FILE'),
-        scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
+        scopes=['https://www.googleapis.com/auth/spreadsheets']
     )
     logger.debug('Google Sheets service initialized successfully.')
     return build('sheets', 'v4', credentials=creds)
