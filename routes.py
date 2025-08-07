@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from typing import Optional, Dict, List
 import os
 from config import logger
-from business import get_threshold
+from business import get_threshold, calculate_cashflow_difference
 from sheets import get_sheets_service, get_last_row
 
 routes = Blueprint('routes', __name__)
@@ -101,8 +101,40 @@ def fetch_data():
             'threshold': f"${threshold:,.2f}",
             'rentAfter3Percent': f"${rent_after_3_percent:,.2f}",
             'meetsThreshold': meets_threshold,
+            # numeric values for dynamic calculations
+            'rentValue': rent,
+            'cashflowValue': cashflow,
+            'thresholdValue': threshold,
+            'purchasePriceValue': purchase_price,
+            'rentAfter3PercentValue': rent_after_3_percent,
         })
 
     except Exception as e:
         logger.error(f"Error fetching data from Google Sheets: {e}")
         return 'Error fetching data from Google Sheets', 500
+
+
+@routes.route('/calculate-cashflow', methods=['POST'])
+def calculate_cashflow():
+    """Calculate projected cashflow information when the rent changes.
+
+    Expects JSON with ``currentRent``, ``currentCashflow``, ``threshold`` and
+    ``newRent``. Returns the projected cashflow, difference from the threshold
+    and whether the threshold is met.
+    """
+    data = request.get_json(force=True)
+    try:
+        current_rent = float(data.get('currentRent', 0))
+        current_cashflow = float(data.get('currentCashflow', 0))
+        threshold = float(data.get('threshold', 0))
+        new_rent = float(data.get('newRent', current_rent))
+    except (TypeError, ValueError):
+        return 'Invalid numeric values supplied', 400
+
+    result = calculate_cashflow_difference(
+        current_rent=current_rent,
+        current_cashflow=current_cashflow,
+        threshold=threshold,
+        new_rent=new_rent,
+    )
+    return jsonify(result)
