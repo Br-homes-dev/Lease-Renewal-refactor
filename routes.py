@@ -168,8 +168,10 @@ def submit_decision():
 
     try:
         service = get_sheets_service()
-        update_range = f"{sheet_name}!S{row_number}:T{row_number}"
-        body = {'values': [[approved_rent, lease_start_date or '']]}
+        # Only update the approved rent in column S.  Column T is reserved in the
+        # sheet and should remain untouched.
+        update_range = f"{sheet_name}!S{row_number}"
+        body = {"values": [[approved_rent]]}
         service.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
             range=update_range,
@@ -178,8 +180,13 @@ def submit_decision():
         ).execute()
 
         if send_lease:
-            # Placeholder for lease sending logic
-            logger.info(f"Lease send requested for Opportunity ID {opportunity_id}")
+            # Placeholder for lease sending logic.  We capture the lease start date
+            # from the payload but do not write it to the sheet.
+            logger.info(
+                "Lease send requested for Opportunity ID %s with start date %s",
+                opportunity_id,
+                lease_start_date,
+            )
 
         return jsonify({'message': 'Decision submitted successfully.'})
     except Exception as e:
