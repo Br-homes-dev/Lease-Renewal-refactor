@@ -138,3 +138,50 @@ def calculate_cashflow():
         new_rent=new_rent,
     )
     return jsonify(result)
+
+
+@routes.route('/submit-decision', methods=['POST'])
+def submit_decision():
+    """Update Google Sheet with approved rent and optional lease info."""
+    data = request.get_json(force=True)
+
+    opportunity_id = data.get('opportunityId')
+    approved_rent = data.get('approvedRent')
+    row_number = data.get('row')
+    lease_start_date = data.get('leaseStartDate')
+    send_lease = bool(data.get('sendLease', False))
+
+    if opportunity_id is None or approved_rent is None or row_number is None:
+        return 'Missing required fields', 400
+
+    try:
+        approved_rent = float(approved_rent)
+        row_number = int(row_number)
+    except (TypeError, ValueError):
+        return 'Invalid numeric values supplied', 400
+
+    spreadsheet_id = os.environ.get('GOOGLE_SHEET_ID')
+    sheet_name = os.environ.get('GOOGLE_SHEET_NAME')
+    if not spreadsheet_id or not sheet_name:
+        logger.error('Missing GOOGLE_SHEET_ID or GOOGLE_SHEET_NAME environment variable')
+        return 'Internal config error: Missing sheet ID or name', 500
+
+    try:
+        service = get_sheets_service()
+        update_range = f"{sheet_name}!S{row_number}:T{row_number}"
+        body = {'values': [[approved_rent, lease_start_date or '']]}
+        service.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=update_range,
+            valueInputOption='USER_ENTERED',
+            body=body,
+        ).execute()
+
+        if send_lease:
+            # Placeholder for lease sending logic
+            logger.info(f"Lease send requested for Opportunity ID {opportunity_id}")
+
+        return jsonify({'message': 'Decision submitted successfully.'})
+    except Exception as e:
+        logger.error(f"Error updating sheet for Opportunity ID {opportunity_id}: {e}")
+        return 'Error updating Google Sheet', 500
