@@ -2,13 +2,11 @@ import os
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from config import logger
+from google.auth import default
 
 def get_sheets_service():
     logger.debug('Initializing Google Sheets service...')
-    creds = service_account.Credentials.from_service_account_file(
-        os.getenv('GOOGLE_SHEET_CREDENTIALS_FILE'),
-        scopes=['https://www.googleapis.com/auth/spreadsheets']
-    )
+    creds, _ = default(scopes=['https://www.googleapis.com/auth/spreadsheets'])
     logger.debug('Google Sheets service initialized successfully.')
     return build('sheets', 'v4', credentials=creds)
 

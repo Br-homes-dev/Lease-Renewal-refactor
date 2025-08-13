@@ -20,7 +20,7 @@ from routes import routes
 # Load environment variables from .env file at runtime
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static',static_url_path='')
 app.register_blueprint(routes)
 
 def get_salesforce_access_token() -> Tuple[str, str]:
@@ -51,19 +51,19 @@ def get_salesforce_access_token() -> Tuple[str, str]:
     logger.info('Salesforce access token obtained successfully.')
     return data['access_token'], data['instance_url']
 
-@app.route('/')
-def serve_index():
-    """
-    Serve the index.html file from the static directory.
-    """
-    return send_from_directory('static', 'index.html')
-
 @app.route('/<path:filename>')
 def serve_static_file(filename: str):
     """
     Serve static files from the static directory.
     """
     return send_from_directory('static', filename)
+
+@app.route('/')
+def root():
+    """
+    Redirect root URL to the index page.
+    """
+    return app.send_static_file('index.html')
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
