@@ -4,6 +4,7 @@ import os
 from config import logger
 from business import get_threshold, calculate_cashflow_difference
 from sheets import get_sheets_service, get_last_row
+from salesforce import update_opportunity
 
 routes = Blueprint('routes', __name__)
 
@@ -178,17 +179,29 @@ def submit_decision():
             valueInputOption='USER_ENTERED',
             body=body,
         ).execute()
-
-        if send_lease:
-            # Placeholder for lease sending logic.  We capture the lease start date
-            # from the payload but do not write it to the sheet.
-            logger.info(
-                "Lease send requested for Opportunity ID %s with start date %s",
-                opportunity_id,
-                lease_start_date,
-            )
-
-        return jsonify({'message': 'Decision submitted successfully.'})
     except Exception as e:
         logger.error(f"Error updating sheet for Opportunity ID {opportunity_id}: {e}")
         return 'Error updating Google Sheet', 500
+
+    try:
+        # Push the approved rent to Salesforce as the monthly payment amount
+        sf_fields = {
+            'Monthly_Payment_Amount__c': approved_rent,
+        }
+        if lease_start_date:
+            sf_fields['Lease_Start_Date__c'] = lease_start_date
+        update_opportunity(opportunity_id, sf_fields)
+    except Exception as e:
+        logger.error(f"Error updating Salesforce for Opportunity ID {opportunity_id}: {e}")
+        return 'Error updating Salesforce', 500
+
+    if send_lease:
+        # Placeholder for lease sending logic.  We capture the lease start date
+        # from the payload but do not write it to the sheet.
+        logger.info(
+            "Lease send requested for Opportunity ID %s with start date %s",
+            opportunity_id,
+            lease_start_date,
+        )
+
+    return jsonify({'message': 'Decision submitted successfully.'})
