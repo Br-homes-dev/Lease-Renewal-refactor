@@ -21,3 +21,8 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger("lease-renewal")
+
+SF_JWT_KEY_PATH = os.getenv("SF_JWT_KEY_PATH", "/var/secrets/SF_JWT_KEY")
+
+with open(SF_JWT_KEY_PATH, 'r') as key_file:
+    SF_JWT_KEY = key_file.read()

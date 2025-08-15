@@ -6,6 +6,8 @@ import jwt
 import requests
 
 from config import logger
+from config import SF_JWT_KEY  
+
 
 
 def get_salesforce_access_token() -> Tuple[str, str]:
@@ -14,14 +16,13 @@ def get_salesforce_access_token() -> Tuple[str, str]:
     Returns a tuple of ``(access_token, instance_url)``.
     """
     logger.info('Obtaining Salesforce access token...')
-    private_key = os.environ['SF_JWT_KEY'].replace('\\n', '\n')
     payload = {
         'iss': os.environ['SF_CLIENT_ID'],
         'sub': os.environ['SF_USERNAME'],
         'aud': os.environ['SF_AUDIENCE'],
         'exp': int(time.time()) + 300,
     }
-    token = jwt.encode(payload, private_key, algorithm='RS256')
+    token = jwt.encode(payload, SF_JWT_KEY, algorithm='RS256')
     params = {
         'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
         'assertion': token,
