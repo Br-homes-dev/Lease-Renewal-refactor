@@ -8,7 +8,9 @@ def get_sheets_service():
     logger.debug('Initializing Google Sheets service...')
     creds, _ = default(scopes=['https://www.googleapis.com/auth/spreadsheets'])
     logger.debug('Google Sheets service initialized successfully.')
-    return build('sheets', 'v4', credentials=creds)
+    
+    # Add cache_discovery=False
+    return build('sheets', 'v4', credentials=creds, cache_discovery=False)
 
 def get_last_row(service, spreadsheet_id: str, sheet_name: str) -> int:
     logger.debug(f'Fetching last row from sheet: {sheet_name} in spreadsheet: {spreadsheet_id}')

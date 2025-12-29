@@ -11,13 +11,18 @@ routes = Blueprint('routes', __name__)
 @routes.route('/fetch-data')
 def fetch_data():
     """
-    Fetches rent, purchase price and cash flow post investor from Google Sheets for a given SF opportunity ID.
-    Computes:
-    - 3% rent increase
-    - threshold requirement based on the purchase price
-    - whether current cashflow meets the threshold
-    - row number so we can make a quicker update later
+    Fetches rent, purchase price and cash flow from Google Sheets for a given SF opportunity ID.
+    Uses fully dynamic column headers to prevent errors when columns are moved or added.
     """
+    # --- CONFIGURATION: EXACT HEADER NAMES FROM ROW 2 ---
+    COLUMN_NAMES = {
+        'opp_id': 'Opportunity ID',
+        'rent': 'Rent Income',
+        'price': 'Original Purchase Price/ Value',
+        'cashflow': 'Post Investor Monthly Cashflow'
+    }
+    # ----------------------------------------------------
+
     opp_id: Optional[str] = request.args.get('opp_id')
     logger.debug(f"Received request to fetch data for Opportunity ID: {opp_id}")
     if not opp_id:
@@ -25,7 +30,6 @@ def fetch_data():
 
     spreadsheet_id = os.environ.get('GOOGLE_SHEET_ID')
     sheet_name = os.environ.get('GOOGLE_SHEET_NAME')
-    logger.debug(f"Spreadsheet ID: {spreadsheet_id}, Sheet Name: {sheet_name}")
 
     if not spreadsheet_id or not sheet_name:
         logger.error("Missing GOOGLE_SHEET_ID or GOOGLE_SHEET_NAME environment variable")
@@ -35,51 +39,82 @@ def fetch_data():
         service = get_sheets_service()
         last_row = get_last_row(service, spreadsheet_id, sheet_name)
 
-        # Data starts in row 3 due to header
-        range = f"{sheet_name}!A3:BW{last_row}"
+        # Start from A2 to capture headers (Row 2) and all data up to column ZZ
+        range = f"{sheet_name}!A2:ZZ{last_row}"
         resp = service.spreadsheets().values().get(
             spreadsheetId=spreadsheet_id,
             range=range
         ).execute()
 
-        rows = resp.get('values', [])
+        all_rows = resp.get('values', [])
+        if not all_rows:
+            return "No data found in sheet", 404
 
-        id_to_row: Dict[str, List[str]] = {}
-        row_number_map: Dict[str, int] = {}
+        # Row 2 contains headers, Row 3+ contains data
+        headers = all_rows[0]
+        data_rows = all_rows[1:]
 
-        for i, row in enumerate(rows):
-            try:
-                if len(row) > 74:
-                    raw_id = row[74]
-                    if raw_id:
-                        id_val = ''.join(raw_id.split()).lower()
-                        id_to_row[id_val] = row
-                        row_number_map[id_val] = i + 3  # Offset for row start at 3
-                else:
-                    logger.debug(f"Row {i+3} too short: only {len(row)} columns")
-            except Exception as e:
-                logger.error(f"Error processing row {i+3}: {e} | Row content: {row}")
+        # Create a map of "Column Name" -> Index
+        # We strip() whitespace to handle accidental spaces like " Rent Income "
+        header_map = {name.strip(): i for i, name in enumerate(headers)}
+        
+        # Verify all required columns exist
+        column_indices = {}
+        missing_columns = []
+        
+        for key, sheet_header_name in COLUMN_NAMES.items():
+            if sheet_header_name in header_map:
+                column_indices[key] = header_map[sheet_header_name]
+            else:
+                missing_columns.append(sheet_header_name)
 
-        logger.debug(f"Collected {len(id_to_row)} valid rows")
-        logger.debug(f"Sample IDs: {list(id_to_row.keys())[:5]}")
+        if missing_columns:
+            error_msg = f"Configuration Error: The following columns were not found in Row 2: {', '.join(missing_columns)}"
+            logger.error(error_msg)
+            # Log the headers we DID find to help debugging
+            logger.error(f"Headers actually found in sheet: {list(header_map.keys())}")
+            return error_msg, 500
 
-        normalized_opp_id = ''.join(opp_id.split()).lower()
-        if normalized_opp_id not in id_to_row:
+        # Helper to get value safely from a row using our dynamic index
+        def get_col_val(row_data, col_key):
+            idx = column_indices[col_key]
+            if len(row_data) > idx:
+                return row_data[idx]
+            return ''
+
+        # Search for the Opportunity ID
+        id_to_row = {}
+        row_number_map = {}
+        opp_id_idx = column_indices['opp_id']
+
+        for i, row in enumerate(data_rows):
+            if len(row) > opp_id_idx:
+                raw_id = row[opp_id_idx]
+                if raw_id:
+                    # Normalize ID for comparison
+                    id_val = ''.join(raw_id.split()).lower()
+                    id_to_row[id_val] = row
+                    # i=0 is Row 3, so Row Number = i + 3
+                    row_number_map[id_val] = i + 3
+
+        normalized_request_id = ''.join(opp_id.split()).lower()
+        
+        if normalized_request_id not in id_to_row:
             logger.debug(f"No data found for Opportunity ID: {opp_id}")
             return f"No data found for Opportunity ID: {opp_id}", 404
 
-        found_row = id_to_row[normalized_opp_id]
-        row_number = row_number_map[normalized_opp_id]
+        found_row = id_to_row[normalized_request_id]
+        row_number = row_number_map[normalized_request_id]
 
-        # Sheet column mapping
-        rent_raw = found_row[18] if len(found_row) > 18 else ''
-        purchase_price_raw = found_row[9] if len(found_row) > 9 else ''
-        cashflow_raw = found_row[29] if len(found_row) > 29 else ''
+        # Fetch data using the dynamic indices
+        rent_raw = get_col_val(found_row, 'rent')
+        purchase_price_raw = get_col_val(found_row, 'price')
+        cashflow_raw = get_col_val(found_row, 'cashflow')
+
+        logger.debug(f"Parsed values - Rent: {rent_raw}, Price: {purchase_price_raw}, Cashflow: {cashflow_raw}")
 
         def parse_num(value: str) -> float:
             return float(''.join(ch for ch in value if ch in '0123456789.-')) if value else 0.0
-
-        logger.debug(f"Parsed values - Rent: {rent_raw}, Purchase Price: {purchase_price_raw}, Cashflow: {cashflow_raw}")
 
         rent = parse_num(rent_raw)
         purchase_price = parse_num(purchase_price_raw)
@@ -88,10 +123,6 @@ def fetch_data():
         rent_after_3_percent = round(rent * 1.03, 2)
         threshold = get_threshold(purchase_price)
         meets_threshold = cashflow >= threshold
-
-        logger.debug(f"Calculated rent after 3% increase: {rent_after_3_percent}")
-        logger.debug(f"Threshold for purchase price {purchase_price}: {threshold}")
-        logger.debug(f"Meets threshold: {meets_threshold}")
 
         return jsonify({
             'message': 'Opportunity ID found!',
@@ -102,7 +133,6 @@ def fetch_data():
             'threshold': f"${threshold:,.2f}",
             'rentAfter3Percent': f"${rent_after_3_percent:,.2f}",
             'meetsThreshold': meets_threshold,
-            # numeric values for dynamic calculations
             'rentValue': rent,
             'cashflowValue': cashflow,
             'thresholdValue': threshold,
@@ -112,7 +142,7 @@ def fetch_data():
 
     except Exception as e:
         logger.error(f"Error fetching data from Google Sheets: {e}")
-        return 'Error fetching data from Google Sheets', 500
+        return f"Error fetching data: {str(e)}", 500
 
 
 @routes.route('/calculate-cashflow', methods=['POST'])
