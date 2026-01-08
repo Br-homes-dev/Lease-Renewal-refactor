@@ -4,7 +4,7 @@ import os
 from config import logger
 from business import get_threshold, calculate_cashflow_difference
 from sheets import get_sheets_service, get_last_row
-from salesforce import update_opportunity
+from salesforce import update_opportunity, publish_lease_event
 
 routes = Blueprint('routes', __name__)
 
@@ -197,10 +197,10 @@ def submit_decision():
         logger.error('Missing GOOGLE_SHEET_ID or GOOGLE_SHEET_NAME environment variable')
         return 'Internal config error: Missing sheet ID or name', 500
 
+    # 1. Update Google Sheets
     try:
         service = get_sheets_service()
-        # Only update the approved rent in column S.  Column T is reserved in the
-        # sheet and should remain untouched.
+        # Only update the approved rent in column S. Column T is reserved.
         update_range = f"{sheet_name}!S{row_number}"
         body = {"values": [[approved_rent]]}
         service.spreadsheets().values().update(
@@ -213,6 +213,7 @@ def submit_decision():
         logger.error(f"Error updating sheet for Opportunity ID {opportunity_id}: {e}")
         return 'Error updating Google Sheet', 500
 
+    # 2. Update Salesforce Opportunity Record
     try:
         # Push the approved rent to Salesforce as the monthly payment amount
         sf_fields = {
@@ -225,13 +226,17 @@ def submit_decision():
         logger.error(f"Error updating Salesforce for Opportunity ID {opportunity_id}: {e}")
         return 'Error updating Salesforce', 500
 
+    # 3. Trigger Platform Event (The New Part)
     if send_lease:
-        # Placeholder for lease sending logic.  We capture the lease start date
-        # from the payload but do not write it to the sheet.
         logger.info(
-            "Lease send requested for Opportunity ID %s with start date %s",
+            "Lease send requested for Opportunity ID %s. Publishing Platform Event...",
             opportunity_id,
-            lease_start_date,
         )
+        try:
+            #Triggers the flow via the Platform Event
+            publish_lease_event(opportunity_id)
+        except Exception as e:
+            # Log error but do not fail the request since data was saved successfully
+            logger.error(f"Error publishing Salesforce Event for {opportunity_id}: {e}")
 
     return jsonify({'message': 'Decision submitted successfully.'})

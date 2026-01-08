@@ -53,3 +53,33 @@ def update_opportunity(opportunity_id: str, fields: Dict[str, object]) -> None:
     response = requests.patch(url, json=fields, headers=headers)
     response.raise_for_status()
     logger.info('Updated Salesforce Opportunity %s with fields %s', opportunity_id, fields)
+
+def publish_lease_event(opportunity_id: str) -> None:
+    """
+    Publishes a Lease_Request__e platform event to trigger the Salesforce Flow.
+    """
+    access_token, instance_url = get_salesforce_access_token()
+    
+    # Note the "__e" suffix. This is required for Platform Events.
+    url = f"{instance_url}/services/data/v57.0/sobjects/Lease_Request__e"
+    
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json',
+    }
+    
+    # This payload key must match the API Name of the field you just created
+    payload = {
+        "Opportunity_ID__c": opportunity_id
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        logger.info(f"Successfully published Lease_Request__e for Opp {opportunity_id}")
+    except requests.exceptions.RequestException as e:
+        # We log the error specifically so we can see if it was a 400 (Bad Request) or 403 (Permissions)
+        logger.error(f"Failed to publish platform event: {e}")
+        if e.response is not None:
+             logger.error(f"Salesforce Response: {e.response.text}")
+        raise  # Re-raise to let the caller know it failed
