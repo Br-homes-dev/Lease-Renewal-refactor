@@ -1,5 +1,6 @@
 import os
 import time
+import base64
 from typing import Dict, Tuple
 
 import jwt
@@ -83,3 +84,33 @@ def publish_lease_event(opportunity_id: str) -> None:
         if e.response is not None:
              logger.error(f"Salesforce Response: {e.response.text}")
         raise  # Re-raise to let the caller know it failed
+
+def upload_lease_file(opportunity_id: str, pdf_bytes: bytes, filename: str = "Lease_Renewal.pdf") -> str:
+    """
+    Uploads a PDF file to Salesforce and links it to the Opportunity.
+    Returns the ContentVersion ID.
+    """
+    access_token, instance_url = get_salesforce_access_token()
+
+    # 1. Prepare the file payload (this is base 64 encoded)
+    b64_data = base64.b64encode(pdf_bytes).decode('utf-8')
+
+    # 2. Upload the 'ContentVersion' (The file itself)
+    cv_url = f"{instance_url}/services/data/v57.0/sobjects/ContentVersion"
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json',
+    }
+    cv_payload = {
+        "Title": filename,
+        "PathOnClient": filename,
+        "VersionData": b64_data,
+        "FirstPublishLocationId": opportunity_id # This automatically links it to the Opp
+    }
+
+    resp = requests.post(cv_url, json=cv_payload, headers=headers)
+    resp.raise_for_status()
+
+    content_version_id = resp.json().get('id')
+    logger.info(f"Uploaded Lease PDF {filename} to Opportunity {opportunity_id}")
+    return content_version_id

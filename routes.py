@@ -4,7 +4,9 @@ import os
 from config import logger
 from business import get_threshold, calculate_cashflow_difference
 from sheets import get_sheets_service, get_last_row
-from salesforce import update_opportunity, publish_lease_event
+from salesforce import update_opportunity, publish_lease_event, upload_lease_file
+from fpdf import FPDF
+
 
 routes = Blueprint('routes', __name__)
 
@@ -173,7 +175,7 @@ def calculate_cashflow():
 
 @routes.route('/submit-decision', methods=['POST'])
 def submit_decision():
-    """Update Google Sheet with approved rent and optional lease info."""
+    """Update Google Sheet, update Salesforce, generate PDF lease, and trigger email."""
     data = request.get_json(force=True)
 
     opportunity_id = data.get('opportunityId')
@@ -200,7 +202,6 @@ def submit_decision():
     # 1. Update Google Sheets
     try:
         service = get_sheets_service()
-        # Only update the approved rent in column S. Column T is reserved.
         update_range = f"{sheet_name}!S{row_number}"
         body = {"values": [[approved_rent]]}
         service.spreadsheets().values().update(
@@ -215,7 +216,6 @@ def submit_decision():
 
     # 2. Update Salesforce Opportunity Record
     try:
-        # Push the approved rent to Salesforce as the monthly payment amount
         sf_fields = {
             'Monthly_Payment_Amount__c': approved_rent,
         }
@@ -226,17 +226,63 @@ def submit_decision():
         logger.error(f"Error updating Salesforce for Opportunity ID {opportunity_id}: {e}")
         return 'Error updating Salesforce', 500
 
-    # 3. Trigger Platform Event (The New Part)
+    # 3. Generate PDF and Trigger Platform Event
     if send_lease:
-        logger.info(
-            "Lease send requested for Opportunity ID %s. Publishing Platform Event...",
-            opportunity_id,
-        )
+        logger.info("Lease send requested for Opp %s. Starting PDF generation...", opportunity_id)
+        
         try:
-            #Triggers the flow via the Platform Event
+            # --- A. Draw the PDF (The "Tinkering" Part) ---
+            pdf = FPDF()
+            pdf.add_page()
+            
+            # Simple Header
+            pdf.set_font("Helvetica", style="B", size=16)
+            pdf.cell(0, 10, "LEASE RENEWAL AGREEMENT", new_x="LMARGIN", new_y="NEXT", align='C')
+            pdf.ln(10) # Add some space
+            
+            # Body Content
+            pdf.set_font("Helvetica", size=12)
+            
+            # Define the lines of text to print
+            text_lines = [
+                f"Date: {lease_start_date if lease_start_date else 'TBD'}",
+                f"Opportunity ID: {opportunity_id}",
+                "", 
+                "RE: Lease Renewal Proposal",
+                "",
+                f"Dear Tenant,",
+                "",
+                f"We are pleased to offer a renewal of your lease.",
+                f"Your new monthly rent will be: ${approved_rent:,.2f}",
+                "",
+                "Please sign and return this document to the leasing office.",
+                "",
+                "Sincerely,",
+                "Berry Rock Homes"
+            ]
+            
+            # Loop through lines and print them
+            for line in text_lines:
+                pdf.cell(0, 8, line, new_x="LMARGIN", new_y="NEXT")
+            
+            # Output to bytes (dest='S' returns the byte string in recent FPDF2 versions)
+            # using pdf.output() with no arguments usually returns bytes in the latest version
+            pdf_bytes = pdf.output()
+            
+            # --- B. Upload to Salesforce ---
+            # We give it a unique name so it doesn't overwrite old ones if they click twice
+            file_name = f"Lease_Renewal_{opportunity_id}.pdf"
+            logger.info(f"Uploading {file_name} to Salesforce...")
+            
+            upload_lease_file(opportunity_id, pdf_bytes, filename=file_name)
+            
+            # --- C. Fire the Event ---
+            # Now that the file is safely in Salesforce, we tell the Flow to send the email
             publish_lease_event(opportunity_id)
+            logger.info("Platform Event published successfully.")
+
         except Exception as e:
-            # Log error but do not fail the request since data was saved successfully
-            logger.error(f"Error publishing Salesforce Event for {opportunity_id}: {e}")
+            # We log the error but don't fail the request since the data was saved successfully
+            logger.error(f"Error during lease generation/sending for {opportunity_id}: {e}")
 
     return jsonify({'message': 'Decision submitted successfully.'})
